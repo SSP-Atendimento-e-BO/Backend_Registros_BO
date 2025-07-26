@@ -1,0 +1,11 @@
+services:
+  transcription:
+    image: bitnami/postgresql:13.16.0
+    environment:
+      POSTGRES_USER: docker
+      POSTGRES_PASSWORD: docker
+      POSTGRES_DB: ssp_bo
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/postgres_data:/bitnami/postgresql
