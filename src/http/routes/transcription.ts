@@ -1,9 +1,6 @@
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod'
 import multipart from '@fastify/multipart'
-import { z } from 'zod/v4'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { db } from '../../db/connection.ts'
-import { registerBo } from '../../db/schema/register_bo.ts'
 
 export const transcriptionRoute: FastifyPluginCallbackZod = (app) => {
   app.register(multipart)
@@ -48,10 +45,6 @@ export const transcriptionRoute: FastifyPluginCallbackZod = (app) => {
         ])
 
         const text = result.response.text()
-
-        await db.insert(registerBo).values({
-          transcription: text,
-        })
 
         return reply.status(200).send({ text })
       } catch (error) {
