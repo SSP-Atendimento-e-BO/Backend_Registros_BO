@@ -53,7 +53,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           type_of_occurrence,
           full_name,
           cpf_or_rg,
-          date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
+          date_of_birth,
           gender,
           nationality,
           marital_status,

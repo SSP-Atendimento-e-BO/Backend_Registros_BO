@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { date, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 
 export const registerBo = pgTable('register_bo', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -7,7 +7,7 @@ export const registerBo = pgTable('register_bo', {
   type_of_occurrence: text('type_of_occurrence').notNull(),
   full_name: text('full_name').notNull(),
   cpf_or_rg: text('cpf_or_rg'),
-  date_of_birth: timestamp('date_of_birth'),
+  date_of_birth: date('date_of_birth'),
   gender: text('gender'),
   nationality: text('nationality'),
   marital_status: text('marital_status'),
