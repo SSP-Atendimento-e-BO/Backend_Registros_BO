@@ -1,0 +1,136 @@
+{
+  "id": "9e19015d-7390-4793-b420-47793d880eaa",
+  "prevId": "1a1b951a-c0bf-4096-b5cd-fafbafa24b0a",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.register_bo": {
+      "name": "register_bo",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "date_and_time_of_event": {
+          "name": "date_and_time_of_event",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "place_of_the_fact": {
+          "name": "place_of_the_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type_of_occurrence": {
+          "name": "type_of_occurrence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf_or_rg": {
+          "name": "cpf_or_rg",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_of_birth": {
+          "name": "date_of_birth",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nationality": {
+          "name": "nationality",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marital_status": {
+          "name": "marital_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profession": {
+          "name": "profession",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "full_address": {
+          "name": "full_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone_or_cell_phone": {
+          "name": "phone_or_cell_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relationship_with_the_fact": {
+          "name": "relationship_with_the_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transcription": {
+          "name": "transcription",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
