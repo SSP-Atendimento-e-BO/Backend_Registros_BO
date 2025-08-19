@@ -2,7 +2,7 @@ import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { db } from '../../db/connection.ts'
 import { registerBo } from '../../db/schema/register_bo.ts'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
@@ -78,7 +78,10 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
 
   app.get('/register-bo', async (request, reply) => {
     try {
-      const allBo = await db.select().from(registerBo)
+      const allBo = await db
+        .select()
+        .from(registerBo)
+        .orderBy(desc(registerBo.createdAt))
       return reply.status(200).send(allBo)
     } catch (error) {
       app.log.error('Erro ao listar B.O.s:', error)
