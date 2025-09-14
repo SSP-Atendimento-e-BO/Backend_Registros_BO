@@ -16,9 +16,11 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@ai-sdk/google": "^2.0.14",
     "@fastify/cors": "^11.0.1",
     "@fastify/multipart": "^9.0.3",
     "@google/generative-ai": "^0.24.1",
+    "ai": "^5.0.44",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "drizzle-orm": "^0.44.3",
