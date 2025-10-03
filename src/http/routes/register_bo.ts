@@ -1,12 +1,12 @@
-import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod'
-import { z } from 'zod'
-import { db } from '../../db/connection.ts'
-import { registerBo } from '../../db/schema/register_bo.ts'
-import { desc, eq } from 'drizzle-orm'
+import type { FastifyPluginCallbackZod } from "fastify-type-provider-zod";
+import { z } from "zod";
+import { db } from "../../db/connection.ts";
+import { registerBo } from "../../db/schema/register_bo.ts";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
-    '/register-bo',
+    "/register-bo",
     {
       schema: {
         body: z.object({
@@ -45,7 +45,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         email,
         relationship_with_the_fact,
         transcription,
-      } = request.body
+      } = request.body;
 
       try {
         await db.insert(registerBo).values({
@@ -64,33 +64,96 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           email,
           relationship_with_the_fact,
           transcription,
-        })
+        });
 
-        return reply.status(201).send()
+        return reply.status(201).send();
       } catch (error) {
-        app.log.error('Erro ao registrar B.O.:', error)
+        app.log.error("Erro ao registrar B.O.:", error);
         return reply
           .status(500)
-          .send({ error: 'Erro interno ao registrar B.O.' })
+          .send({ error: "Erro interno ao registrar B.O." });
       }
-    },
-  )
-
-  app.get('/register-bo', async (request, reply) => {
-    try {
-      const allBo = await db
-        .select()
-        .from(registerBo)
-        .orderBy(desc(registerBo.createdAt))
-      return reply.status(200).send(allBo)
-    } catch (error) {
-      app.log.error('Erro ao listar B.O.s:', error)
-      return reply.status(500).send({ error: 'Erro interno ao listar B.O.s' })
     }
-  })
+  );
 
   app.get(
-    '/register-bo/:id',
+  '/register-bo',
+  {
+    schema: {
+      querystring: z.object({
+        page: z.coerce.number().optional().default(1),
+        searchTerm: z.string().optional(),
+        typeFilter: z.string().optional(),
+      }),
+    },
+  },
+  async (request, reply) => {
+    const { page, searchTerm, typeFilter } = request.query
+    const limit = 10
+    const offset = (page - 1) * limit
+
+    try {
+      const whereConditions = []
+
+      // 🔍 Filtro por nome com acento + case insensitive
+      if (searchTerm) {
+        const searchTermPattern = `%${searchTerm}%`
+        whereConditions.push(
+          or(
+            sql`unaccent(${registerBo.id}::text) ILIKE unaccent(${searchTermPattern})`,
+            sql`unaccent(${registerBo.full_name}) ILIKE unaccent(${searchTermPattern})`,
+            sql`unaccent(${registerBo.place_of_the_fact}) ILIKE unaccent(${searchTermPattern})`,
+            sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`,
+          ),
+        )
+      }
+
+      // 🎯 Filtro por tipo (se não for "all")
+      if (typeFilter && typeFilter !== 'all') {
+        whereConditions.push(eq(registerBo.type_of_occurrence, typeFilter))
+      }
+
+      const finalWhereCondition =
+        whereConditions.length > 0 ? and(...whereConditions) : undefined
+
+      // 📊 Busca total + dados paginados
+      const [total, data] = await Promise.all([
+        db
+          .select({ count: sql`count(*)` })
+          .from(registerBo)
+          .where(finalWhereCondition),
+        db
+          .select()
+          .from(registerBo)
+          .where(finalWhereCondition)
+          .orderBy(desc(registerBo.createdAt))
+          .limit(limit)
+          .offset(offset),
+      ])
+
+      const totalCount = Number(total[0].count)
+
+      return reply.status(200).send({
+        data,
+        total: totalCount,
+        page,
+        totalPages: Math.ceil(totalCount / limit),
+      })
+    } catch (error) {
+      if (error instanceof Error) {
+        app.log.error('Erro ao listar B.O.s: ' + error.stack)
+      } else {
+        app.log.error('Erro ao listar B.O.s:', error)
+      }
+      return reply
+        .status(500)
+        .send({ error: 'Erro interno ao listar B.O.s' })
+    }
+  },
+)
+
+  app.get(
+    "/register-bo/:id",
     {
       schema: {
         params: z.object({
@@ -99,25 +162,28 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       },
     },
     async (request, reply) => {
-      const { id } = request.params
+      const { id } = request.params;
 
       try {
-        const bo = await db.select().from(registerBo).where(eq(registerBo.id, id))
+        const bo = await db
+          .select()
+          .from(registerBo)
+          .where(eq(registerBo.id, id));
 
         if (!bo.length) {
-          return reply.status(404).send({ error: 'B.O. não encontrado' })
+          return reply.status(404).send({ error: "B.O. não encontrado" });
         }
 
-        return reply.status(200).send(bo[0])
+        return reply.status(200).send(bo[0]);
       } catch (error) {
-        app.log.error('Erro ao buscar B.O.:', error)
-        return reply.status(500).send({ error: 'Erro interno ao buscar B.O.' })
+        app.log.error("Erro ao buscar B.O.:", error);
+        return reply.status(500).send({ error: "Erro interno ao buscar B.O." });
       }
-    },
-  )
+    }
+  );
 
   app.put(
-    '/register-bo/:id',
+    "/register-bo/:id",
     {
       schema: {
         params: z.object({
@@ -143,8 +209,8 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       },
     },
     async (request, reply) => {
-      const { id } = request.params
-      const { date_and_time_of_event, ...fieldsToUpdate } = request.body
+      const { id } = request.params;
+      const { date_and_time_of_event, ...fieldsToUpdate } = request.body;
 
       try {
         const updatedBo = await db
@@ -156,24 +222,24 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
             }),
           })
           .where(eq(registerBo.id, id))
-          .returning()
+          .returning();
 
         if (!updatedBo.length) {
-          return reply.status(404).send({ error: 'B.O. não encontrado' })
+          return reply.status(404).send({ error: "B.O. não encontrado" });
         }
 
-        return reply.status(200).send(updatedBo[0])
+        return reply.status(200).send(updatedBo[0]);
       } catch (error) {
-        app.log.error('Erro ao atualizar B.O.:', error)
+        app.log.error("Erro ao atualizar B.O.:", error);
         return reply
           .status(500)
-          .send({ error: 'Erro interno ao atualizar B.O.' })
+          .send({ error: "Erro interno ao atualizar B.O." });
       }
-    },
-  )
+    }
+  );
 
   app.delete(
-    '/register-bo/:id',
+    "/register-bo/:id",
     {
       schema: {
         params: z.object({
@@ -182,23 +248,25 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       },
     },
     async (request, reply) => {
-      const { id } = request.params
+      const { id } = request.params;
 
       try {
         const deletedBo = await db
           .delete(registerBo)
           .where(eq(registerBo.id, id))
-          .returning()
+          .returning();
 
         if (!deletedBo.length) {
-          return reply.status(404).send({ error: 'B.O. não encontrado' })
+          return reply.status(404).send({ error: "B.O. não encontrado" });
         }
 
-        return reply.status(204).send()
+        return reply.status(204).send();
       } catch (error) {
-        app.log.error('Erro ao deletar B.O.:', error)
-        return reply.status(500).send({ error: 'Erro interno ao deletar B.O.' })
+        app.log.error("Erro ao deletar B.O.:", error);
+        return reply
+          .status(500)
+          .send({ error: "Erro interno ao deletar B.O." });
       }
-    },
-  )
-}
+    }
+  );
+};
