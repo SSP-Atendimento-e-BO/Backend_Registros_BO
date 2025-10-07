@@ -10,7 +10,7 @@ export const transcriptionRoute: FastifyPluginCallbackZod = (app) => {
   }
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   app.post(
     '/transcribe',
@@ -34,7 +34,7 @@ export const transcriptionRoute: FastifyPluginCallbackZod = (app) => {
       try {
         const result = await model.generateContent([
           {
-            text: 'Transcreva o áudio para português do Brasil. Seja preciso, claro e mantenha a pontuação.Elimine da transcrição qualquer ruído em paralelo,principalmente os que possam ficar no final da fala!',
+            text: 'Transcreva o áudio para português do Brasil. Seja preciso, claro e mantenha a pontuação.Elimine da transcrição qualquer ruído em paralelo,principalmente os que possam ficar no final da fala!Se não detectar nada,não crie texto e nem abstraia.',
           },
           {
             inlineData: {

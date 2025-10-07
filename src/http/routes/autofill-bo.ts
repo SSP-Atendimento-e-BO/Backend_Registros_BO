@@ -87,9 +87,9 @@ export const autofillBoRoute: FastifyPluginCallbackZod = (app) => {
 
     try {
       const result = await streamObject({
-        model: google("models/gemini-1.5-flash-latest"),
+        model: google("models/gemini-2.5-flash"),
         schema: boSchema,
-        prompt: `O usuário forneceu o seguinte relato para um boletim de ocorrência. Extraia as informações para preencher o formulário. Se uma informação não for encontrada, deixe o campo em branco. Relato: "${userInput}"`,
+        prompt: `O usuário forneceu o seguinte relato para um boletim de ocorrência. Extraia as informações para preencher o formulário. Se uma informação não for encontrada, deixe o campo em branco.OBSERVAÇÃO: NÃO CRIE INFORMAÇÕES,SÓ PREENCHA OS CAMPOS QUE FORAM PASSADOS.Relato: "${userInput}"`,
       });
 
       // Lê o stream inteiro
