@@ -1,6 +1,6 @@
 import { reset, seed } from 'drizzle-seed';
-import { db, sql } from './connection.ts';
-import { schema } from './schema/index.ts';
+import { db, sql } from './connection.js';
+import { schema } from './schema/index.js';
 
 await reset(db, schema);
 
