@@ -3,6 +3,9 @@ import { z } from "zod";
 import { db } from "../../db/connection.ts";
 import { registerBo } from "../../db/schema/register_bo.ts";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { sendBoConfirmationEmail } from "../../services/email.ts";
+import path from "path";
+import { generatePdf } from "../../services/pdf.ts";
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
@@ -48,7 +51,8 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       } = request.body;
 
       try {
-        await db.insert(registerBo).values({
+        // Inserir o B.O. no banco de dados
+        const [result] = await db.insert(registerBo).values({
           date_and_time_of_event: new Date(date_and_time_of_event),
           place_of_the_fact,
           type_of_occurrence,
@@ -64,9 +68,55 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           email,
           relationship_with_the_fact,
           transcription,
-        });
+        }).returning({ id: registerBo.id });
 
-        return reply.status(201).send();
+        const boId = result.id;
+
+        // Gerar o PDF do B.O.
+        const pdfData = {
+          id: boId,
+          date_and_time_of_event: new Date(date_and_time_of_event),
+          place_of_the_fact,
+          type_of_occurrence,
+          full_name,
+          cpf_or_rg,
+          date_of_birth: date_of_birth ? new Date(date_of_birth) : undefined,
+          gender,
+          nationality,
+          marital_status,
+          profession,
+          full_address,
+          phone_or_cell_phone,
+          email,
+          relationship_with_the_fact,
+          transcription,
+          created_at: new Date(),
+        };
+
+        const pdfPath = await generatePdf(pdfData);
+
+        // Enviar e-mail com o PDF anexado (se o e-mail foi fornecido)
+        if (email) {
+          try {
+            const emailResult = await sendBoConfirmationEmail(
+              email,
+              full_name,
+              boId,
+              pdfPath
+            );
+            
+            if (!emailResult.success) {
+              app.log.error(`Erro ao enviar e-mail para ${email}:`, emailResult.error);
+            } else {
+              app.log.info(`E-mail enviado com sucesso para ${email}`);
+            }
+          } catch (emailError) {
+            // Não falhar o registro do B.O. se o envio de e-mail falhar
+            app.log.error(`Erro ao enviar e-mail para ${email}:`, emailError);
+          }
+        }
+
+        return reply.status(201).send({ id: boId });
       } catch (error) {
         app.log.error("Erro ao registrar B.O.:", error);
         return reply
