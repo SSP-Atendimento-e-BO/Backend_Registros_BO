@@ -1,4 +1,4 @@
-import { registerBo } from "./register_bo.js";
+import { registerBo } from "./register_bo.ts";
 
 
 export const schema = {

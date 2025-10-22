@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import PDFDocument from 'pdfkit';
-import { env } from '../env.js';
+import { env } from '../env.ts';
 
 /**
  * Gera um PDF com os dados do Boletim de Ocorrência

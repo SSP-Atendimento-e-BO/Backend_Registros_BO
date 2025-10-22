@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { env } from '../env.js';
+import { env } from '../env.ts';
 import fs from 'fs';
 import path from 'path';
 
