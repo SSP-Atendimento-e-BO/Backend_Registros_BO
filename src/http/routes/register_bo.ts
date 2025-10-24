@@ -4,7 +4,6 @@ import { db } from "../../db/connection.ts";
 import { registerBo } from "../../db/schema/register_bo.ts";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { sendBoConfirmationEmail } from "../../services/email.ts";
-import path from "path";
 import { generatePdf } from "../../services/pdf.ts";
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
@@ -93,7 +92,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           created_at: new Date(),
         };
 
-        const pdfPath = await generatePdf(pdfData);
+        const pdfBuffer = await generatePdf(pdfData);
 
         // Enviar e-mail com o PDF anexado (se o e-mail foi fornecido)
         if (email) {
@@ -102,7 +101,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               email,
               full_name,
               boId,
-              pdfPath
+              pdfBuffer
             );
             
             if (!emailResult.success) {

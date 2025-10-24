@@ -1,7 +1,5 @@
 import { Resend } from 'resend';
 import { env } from '../env.ts';
-import fs from 'fs';
-import path from 'path';
 
 // Inicializa o cliente Resend com a API key
 const resend = new Resend(env.RESEND_API_KEY);
@@ -68,18 +66,9 @@ export async function sendBoConfirmationEmail(
   recipientEmail: string,
   fullName: string,
   boId: string,
-  pdfPath: string,
+  pdfBuffer: Buffer,
 ) {
   try {
-    // Verifica se o arquivo PDF existe
-    if (!fs.existsSync(pdfPath)) {
-      throw new Error(`PDF não encontrado: ${pdfPath}`);
-    }
-
-    // Lê o arquivo PDF
-    const pdfBuffer = fs.readFileSync(pdfPath);
-    
-    // Envia o e-mail com o PDF anexado
     const { data, error } = await resend.emails.send({
       from: env.EMAIL_FROM || 'boletim@seusistema.com',
       to: recipientEmail,
@@ -93,7 +82,6 @@ export async function sendBoConfirmationEmail(
       ],
     });
 
-    // Registra o log de envio
     const log: EmailLog = {
       boId,
       recipientEmail,
@@ -103,9 +91,7 @@ export async function sendBoConfirmationEmail(
     };
     
     emailLogs.push(log);
-    
-    // Em produção, salvar o log no banco de dados
-    
+
     if (error) {
       console.error('Erro ao enviar e-mail:', error);
       return { success: false, error };
@@ -113,7 +99,6 @@ export async function sendBoConfirmationEmail(
     
     return { success: true, data };
   } catch (error) {
-    // Registra o erro no log
     const log: EmailLog = {
       boId,
       recipientEmail,
