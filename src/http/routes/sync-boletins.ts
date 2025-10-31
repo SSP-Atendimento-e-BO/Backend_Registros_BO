@@ -20,14 +20,22 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
             type_of_occurrence: z.string(),
             full_name: z.string(),
             cpf_or_rg: z.string().optional(),
-            date_of_birth: z.string().datetime().optional(),
+            // Aceita YYYY-MM-DD, ISO datetime ou string vazia para limpar
+            date_of_birth: z
+              .union([
+                z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                z.string().datetime(),
+                z.literal("")
+              ])
+              .optional(),
             gender: z.string().optional(),
             nationality: z.string().optional(),
             marital_status: z.string().optional(),
             profession: z.string().optional(),
             full_address: z.string().optional(),
             phone_or_cell_phone: z.string().optional(),
-            email: z.string().email().optional(),
+            // E-mail válido ou string vazia para remover
+            email: z.union([z.string().email(), z.literal("")]).optional(),
             relationship_with_the_fact: z.string(),
             transcription: z.string().optional(),
             collected_at: z.string().datetime().optional(),
@@ -82,24 +90,40 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
             }
           }
 
+          // Sanitização: converter strings vazias em null para campos opcionais,
+          // normalizar data de nascimento (ISO -> YYYY-MM-DD)
+          const normalizedDOB =
+            typeof date_of_birth === 'string'
+              ? (date_of_birth.includes('T')
+                  ? date_of_birth.slice(0, 10)
+                  : date_of_birth)
+              : undefined
+
+          const sanitizedEmail = email === '' ? null : email
+
           const values = {
             date_and_time_of_event: new Date(date_and_time_of_event),
             place_of_the_fact,
             type_of_occurrence,
             full_name,
-            cpf_or_rg,
+            cpf_or_rg: cpf_or_rg === '' ? null : cpf_or_rg,
             // Em nosso schema, 'date_of_birth' é 'date' (string no Drizzle)
-            // Portanto, mantemos o valor como string ou undefined
-            date_of_birth: date_of_birth ?? undefined,
-            gender,
-            nationality,
-            marital_status,
-            profession,
-            full_address,
-            phone_or_cell_phone,
-            email,
+            // Portanto, usamos string YYYY-MM-DD ou null
+            date_of_birth:
+              normalizedDOB === undefined
+                ? undefined
+                : normalizedDOB === ''
+                ? null
+                : normalizedDOB,
+            gender: gender === '' ? null : gender,
+            nationality: nationality === '' ? null : nationality,
+            marital_status: marital_status === '' ? null : marital_status,
+            profession: profession === '' ? null : profession,
+            full_address: full_address === '' ? null : full_address,
+            phone_or_cell_phone: phone_or_cell_phone === '' ? null : phone_or_cell_phone,
+            email: sanitizedEmail,
             relationship_with_the_fact,
-            transcription,
+            transcription: transcription === '' ? null : transcription,
             localId,
             collectedAt: collected_at ? new Date(collected_at) : undefined,
             receivedAt: new Date(),
@@ -115,7 +139,7 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
           synced.push({ localId, serverId })
 
           // Opcional: envia e-mail com PDF anexado, seguindo comportamento do endpoint existente
-          if (email) {
+          if (sanitizedEmail) {
             const pdfData = {
               id: serverId,
               date_and_time_of_event: values.date_and_time_of_event,
@@ -130,7 +154,7 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
               profession,
               full_address,
               phone_or_cell_phone,
-              email,
+              email: sanitizedEmail,
               relationship_with_the_fact,
               transcription,
               created_at: new Date(),
@@ -139,7 +163,7 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
             try {
               const pdfBuffer = await generatePdf(pdfData)
               const emailResult = await sendBoConfirmationEmail(
-                email,
+                sanitizedEmail,
                 full_name,
                 serverId,
                 pdfBuffer,
