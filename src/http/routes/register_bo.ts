@@ -17,14 +17,22 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           type_of_occurrence: z.string(),
           full_name: z.string(),
           cpf_or_rg: z.string().optional(),
-          date_of_birth: z.string().datetime().optional(),
+          // Aceita YYYY-MM-DD ou ISO datetime, e permite limpeza com ""
+          date_of_birth: z
+            .union([
+              z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              z.string().datetime(),
+              z.literal("")
+            ])
+            .optional(),
           gender: z.string().optional(),
           nationality: z.string().optional(),
           marital_status: z.string().optional(),
           profession: z.string().optional(),
           full_address: z.string().optional(),
           phone_or_cell_phone: z.string().optional(),
-          email: z.string().email().optional(),
+          // E-mail válido ou string vazia para remover
+          email: z.union([z.string().email(), z.literal("")]).optional(),
           relationship_with_the_fact: z.string(),
           transcription: z.string().optional(),
         }),
@@ -50,6 +58,15 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       } = request.body;
 
       try {
+        // Normalizar data de nascimento para YYYY-MM-DD (se vier como ISO)
+        const normalizedDateOfBirth =
+          typeof date_of_birth === "string"
+            ? (date_of_birth.includes("T")
+                ? date_of_birth.slice(0, 10)
+                : date_of_birth)
+            : undefined;
+        const sanitizedEmail = email === "" ? null : email;
+
         // Inserir o B.O. no banco de dados
         const [result] = await db.insert(registerBo).values({
           date_and_time_of_event: new Date(date_and_time_of_event),
@@ -57,14 +74,19 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           type_of_occurrence,
           full_name,
           cpf_or_rg,
-          date_of_birth,
+          date_of_birth:
+            normalizedDateOfBirth === undefined
+              ? undefined
+              : normalizedDateOfBirth === ""
+              ? null
+              : normalizedDateOfBirth,
           gender,
           nationality,
           marital_status,
           profession,
           full_address,
           phone_or_cell_phone,
-          email,
+          email: sanitizedEmail,
           relationship_with_the_fact,
           transcription,
         }).returning({ id: registerBo.id });
@@ -79,14 +101,17 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           type_of_occurrence,
           full_name,
           cpf_or_rg,
-          date_of_birth: date_of_birth ? new Date(date_of_birth) : undefined,
+          date_of_birth:
+            normalizedDateOfBirth && normalizedDateOfBirth !== ""
+              ? new Date(normalizedDateOfBirth)
+              : undefined,
           gender,
           nationality,
           marital_status,
           profession,
           full_address,
           phone_or_cell_phone,
-          email,
+          email: sanitizedEmail ?? undefined,
           relationship_with_the_fact,
           transcription,
           created_at: new Date(),
@@ -239,19 +264,30 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           id: z.string().uuid(),
         }),
         body: z.object({
-          date_and_time_of_event: z.string().datetime().optional(),
+          // Permite ISO datetime ou string vazia para limpar
+          date_and_time_of_event: z
+            .union([z.string().datetime(), z.literal("")])
+            .optional(),
           place_of_the_fact: z.string().optional(),
           type_of_occurrence: z.string().optional(),
           full_name: z.string().optional(),
           cpf_or_rg: z.string().optional(),
-          date_of_birth: z.string().datetime().optional(),
+          // Aceita YYYY-MM-DD, ISO datetime, ou "" para limpar
+          date_of_birth: z
+            .union([
+              z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              z.string().datetime(),
+              z.literal("")
+            ])
+            .optional(),
           gender: z.string().optional(),
           nationality: z.string().optional(),
           marital_status: z.string().optional(),
           profession: z.string().optional(),
           full_address: z.string().optional(),
           phone_or_cell_phone: z.string().optional(),
-          email: z.string().email().optional(),
+          // E-mail válido ou string vazia para remover
+          email: z.union([z.string().email(), z.literal("")]).optional(),
           relationship_with_the_fact: z.string().optional(),
           transcription: z.string().optional(),
         }),
@@ -262,16 +298,61 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
       const { date_and_time_of_event, ...fieldsToUpdate } = request.body;
 
       try {
+        // Chaves conforme schema do banco (nullable vs notNull)
+        const nullableKeys = new Set([
+            "cpf_or_rg",
+            "date_of_birth",
+            "gender",
+            "nationality",
+            "marital_status",
+            "profession",
+            "full_address",
+            "phone_or_cell_phone",
+            "email",
+            "transcription",
+        ]);
+        const nonNullableKeys = new Set([
+            "place_of_the_fact",
+            "type_of_occurrence",
+            "full_name",
+            "relationship_with_the_fact",
+        ]);
+    
+        // Converte "" -> null apenas para campos nullable; ignora "" nos not-null
+        const sanitizedFields = Object.fromEntries(
+            Object.entries(fieldsToUpdate)
+                .filter(([key, value]) => {
+                    if (value === "") {
+                        return nullableKeys.has(key);
+                    }
+                    return value !== undefined;
+                })
+                .map(([key, value]) => [key, value === "" ? null : value]),
+        );
+    
+        // Normalizar data de nascimento (ISO -> YYYY-MM-DD)
+        const normalizedDOB =
+            typeof fieldsToUpdate.date_of_birth === "string"
+                ? fieldsToUpdate.date_of_birth.includes("T")
+                    ? fieldsToUpdate.date_of_birth.slice(0, 10)
+                    : fieldsToUpdate.date_of_birth
+                : fieldsToUpdate.date_of_birth;
+    
         const updatedBo = await db
-          .update(registerBo)
-          .set({
-            ...fieldsToUpdate,
-            ...(date_and_time_of_event && {
-              date_and_time_of_event: new Date(date_and_time_of_event),
-            }),
-          })
-          .where(eq(registerBo.id, id))
-          .returning();
+            .update(registerBo)
+            .set({
+                ...sanitizedFields,
+                // Não permitir limpar para NULL (coluna é notNull). Se vier "", ignora.
+                ...(typeof date_and_time_of_event === "string" &&
+                    date_and_time_of_event !== "" && {
+                        date_and_time_of_event: new Date(date_and_time_of_event),
+                    }),
+                ...(normalizedDOB !== undefined && {
+                    date_of_birth: normalizedDOB === "" ? null : normalizedDOB,
+                }),
+            })
+            .where(eq(registerBo.id, id))
+            .returning();
 
         if (!updatedBo.length) {
           return reply.status(404).send({ error: "B.O. não encontrado" });
