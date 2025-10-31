@@ -17,5 +17,10 @@ export const registerBo = pgTable('register_bo', {
   email: text('email'),
   relationship_with_the_fact: text('relationship_with_the_fact').notNull(),
   transcription: text('transcription'),
+  // Offline sync support
+  localId: text('local_id').unique(),
+  collectedAt: timestamp('collected_at'),
+  receivedAt: timestamp('received_at').defaultNow().notNull(),
+  syncStatus: text('sync_status').default('synced').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })

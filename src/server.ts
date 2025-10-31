@@ -11,6 +11,7 @@ import {
 import { transcriptionRoute } from './http/routes/transcription.ts'
 import { registerBoRoute } from './http/routes/register_bo.ts'
 import { autofillBoRoute } from './http/routes/autofill-bo.ts'
+import { syncBoletinsRoute } from './http/routes/sync-boletins.ts'
 
 const app = fastify({ logger: true, bodyLimit: 104857600 }).withTypeProvider<ZodTypeProvider>()
 const PORT = 3333
@@ -23,6 +24,7 @@ app.setValidatorCompiler(validatorCompiler)
 app.register(transcriptionRoute)
 app.register(registerBoRoute)
 app.register(autofillBoRoute)
+app.register(syncBoletinsRoute)
 
 const start = async () => {
   try {
