@@ -2,9 +2,11 @@ import type { FastifyPluginCallbackZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { db } from "../../db/connection.ts";
 import { registerBo } from "../../db/schema/register_bo.ts";
+import { boAuditLog } from "../../db/schema/bo_audit_log.ts";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { sendBoConfirmationEmail } from "../../services/email.ts";
 import { generatePdf } from "../../services/pdf.ts";
+import { isValidPoliceIdentifier } from "../../services/police.ts";
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
@@ -290,14 +292,31 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           email: z.union([z.string().email(), z.literal("")]).optional(),
           relationship_with_the_fact: z.string().optional(),
           transcription: z.string().optional(),
+          // Identificação do policial realizando a edição
+          police_identifier: z.string().min(1),
         }),
       },
     },
     async (request, reply) => {
       const { id } = request.params;
-      const { date_and_time_of_event, ...fieldsToUpdate } = request.body;
+      const { date_and_time_of_event, police_identifier, ...fieldsToUpdate } = request.body;
 
       try {
+        // Validar policial
+        if (!isValidPoliceIdentifier(police_identifier)) {
+          return reply.status(403).send({ error: "Policial não autorizado ou identificador inválido" });
+        }
+
+        // Buscar estado atual para auditoria/diff
+        const beforeRows = await db
+          .select()
+          .from(registerBo)
+          .where(eq(registerBo.id, id));
+        if (!beforeRows.length) {
+          return reply.status(404).send({ error: "B.O. não encontrado" });
+        }
+        const before = beforeRows[0];
+
         // Chaves conforme schema do banco (nullable vs notNull)
         const nullableKeys = new Set([
             "cpf_or_rg",
@@ -358,7 +377,32 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           return reply.status(404).send({ error: "B.O. não encontrado" });
         }
 
-        return reply.status(200).send(updatedBo[0]);
+        const after = updatedBo[0];
+
+        // Calcular diff
+        const changedKeys = [
+          ...Object.keys(sanitizedFields),
+          ...(typeof date_and_time_of_event === "string" && date_and_time_of_event !== "" ? ["date_and_time_of_event"] : []),
+          ...(normalizedDOB !== undefined ? ["date_of_birth"] : []),
+        ];
+        const diff: Record<string, { from: any; to: any }> = Object.fromEntries(
+          changedKeys.map((k) => [
+            k,
+            {
+              from: (before as any)[k] ?? null,
+              to: (after as any)[k] ?? null,
+            },
+          ]),
+        );
+
+        await db.insert(boAuditLog).values({
+          boId: id,
+          action: "update",
+          policeIdentifier: police_identifier,
+          details: { changedKeys, diff, ip: (request.ip as any) },
+        });
+
+        return reply.status(200).send(after);
       } catch (error) {
         app.log.error("Erro ao atualizar B.O.:", error);
         return reply
@@ -375,12 +419,30 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         params: z.object({
           id: z.string(),
         }),
+        body: z.object({
+          police_identifier: z.string().min(1),
+        }),
       },
     },
     async (request, reply) => {
       const { id } = request.params;
+      const { police_identifier } = request.body as { police_identifier: string };
 
       try {
+        if (!isValidPoliceIdentifier(police_identifier)) {
+          return reply.status(403).send({ error: "Policial não autorizado ou identificador inválido" });
+        }
+
+        const beforeRows = await db
+          .select()
+          .from(registerBo)
+          .where(eq(registerBo.id, id));
+
+        if (!beforeRows.length) {
+          return reply.status(404).send({ error: "B.O. não encontrado" });
+        }
+        const before = beforeRows[0];
+
         const deletedBo = await db
           .delete(registerBo)
           .where(eq(registerBo.id, id))
@@ -389,6 +451,21 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         if (!deletedBo.length) {
           return reply.status(404).send({ error: "B.O. não encontrado" });
         }
+
+        await db.insert(boAuditLog).values({
+          boId: id,
+          action: "delete",
+          policeIdentifier: police_identifier,
+          details: {
+            snapshot: {
+              id: before.id,
+              full_name: before.full_name,
+              type_of_occurrence: before.type_of_occurrence,
+              created_at: (before as any).createdAt,
+            },
+            ip: (request.ip as any),
+          },
+        });
 
         return reply.status(204).send();
       } catch (error) {
