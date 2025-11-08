@@ -193,18 +193,20 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         whereConditions.length > 0 ? and(...whereConditions) : undefined
 
       // 📊 Busca total + dados paginados
+      const baseCountQuery = db.select({ count: sql`count(*)` }).from(registerBo)
+      const baseDataQuery = db.select().from(registerBo)
+
+      const countQuery = finalWhereCondition
+        ? baseCountQuery.where(finalWhereCondition)
+        : baseCountQuery
+
+      const dataQuery = finalWhereCondition
+        ? baseDataQuery.where(finalWhereCondition)
+        : baseDataQuery
+
       const [total, data] = await Promise.all([
-        db
-          .select({ count: sql`count(*)` })
-          .from(registerBo)
-          .where(finalWhereCondition),
-        db
-          .select()
-          .from(registerBo)
-          .where(finalWhereCondition)
-          .orderBy(desc(registerBo.createdAt))
-          .limit(limit)
-          .offset(offset),
+        countQuery,
+        dataQuery.orderBy(desc(registerBo.createdAt)).limit(limit).offset(offset),
       ])
 
       const totalCount = Number(total[0].count)
@@ -356,20 +358,33 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
                     ? fieldsToUpdate.date_of_birth.slice(0, 10)
                     : fieldsToUpdate.date_of_birth
                 : fieldsToUpdate.date_of_birth;
+
+        // Monta conjunto de campos a atualizar
+        const setFields: Record<string, any> = {
+          ...sanitizedFields,
+          ...(typeof date_and_time_of_event === "string" &&
+            date_and_time_of_event !== "" && {
+              date_and_time_of_event: new Date(date_and_time_of_event),
+            }),
+          ...(normalizedDOB !== undefined && {
+            date_of_birth: normalizedDOB === "" ? null : normalizedDOB,
+          }),
+        }
+
+        // Se não há nenhum campo a atualizar, registra auditoria vazia e retorna estado atual
+        if (Object.keys(setFields).length === 0) {
+          await db.insert(boAuditLog).values({
+            boId: id,
+            action: "update",
+            policeIdentifier: police_identifier,
+            details: { changedKeys: [], diff: {}, ip: (request.ip as any) },
+          });
+          return reply.status(200).send(before);
+        }
     
         const updatedBo = await db
             .update(registerBo)
-            .set({
-                ...sanitizedFields,
-                // Não permitir limpar para NULL (coluna é notNull). Se vier "", ignora.
-                ...(typeof date_and_time_of_event === "string" &&
-                    date_and_time_of_event !== "" && {
-                        date_and_time_of_event: new Date(date_and_time_of_event),
-                    }),
-                ...(normalizedDOB !== undefined && {
-                    date_of_birth: normalizedDOB === "" ? null : normalizedDOB,
-                }),
-            })
+            .set(setFields)
             .where(eq(registerBo.id, id))
             .returning();
 

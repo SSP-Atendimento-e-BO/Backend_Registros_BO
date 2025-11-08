@@ -3,6 +3,8 @@ const MOCK_POLICE_IDENTIFIERS = new Set<string>([
   'PM-0002',
   'PM-0123',
   'PM-0456',
+  'PM-0789',
+  'PM-9999',
   'PM-1234',
   'PM-5678',
   // Identificadores numéricos simples
