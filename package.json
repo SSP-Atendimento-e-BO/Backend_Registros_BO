@@ -10,7 +10,12 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node --env-file .env --experimental-strip-types --no-warnings --loader=ts-node/esm src/db/seed.ts",
     "lint": "eslint . --ext .ts --fix",
-    "test": "vitest --run"
+    "test": "vitest --run",
+    "test:setup": "node --env-file .env.test --experimental-strip-types --no-warnings --loader=ts-node/esm scripts/create-test-db.ts",
+    "test:verbose": "vitest --run --reporter=verbose",
+    "test:coverage": "vitest --run --reporter=verbose --coverage",
+    "test:dot": "vitest --run --reporter=dot",
+    "test:json": "vitest --run --reporter=json"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +45,7 @@
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
+    "@vitest/coverage-v8": "^4.0.8",
     "drizzle-kit": "^0.31.4",
     "drizzle-seed": "^0.3.1",
     "eslint": "^9.32.0",

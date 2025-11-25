@@ -14,5 +14,14 @@ export default defineConfig({
     pool: 'threads',
     fileParallelism: false,
     maxConcurrency: 1,
+    reporters: ['verbose'],
+    slowTestThreshold: 1000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary', 'html'],
+      reportsDirectory: 'coverage',
+      exclude: ['node_modules', 'tests/setup-db.ts', 'src/services/email.ts'],
+      thresholds: { lines: 70, functions: 75, branches: 50, statements: 69 },
+    },
   },
 })
