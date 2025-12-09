@@ -173,3 +173,6 @@ A tabela principal utilizada no projeto é a `register_bo`.
   - `id` (uuid, chave primária): Identificador único do registro.
   - `transcription` (text): Texto da transcrição do áudio.
   - `created_at` (timestamp): Data e hora de criação do registro.
+
+# sudo chown -R 1001:1001 ./docker/postgres_data
+# sudo chmod -R 777 Caminho/pasta
