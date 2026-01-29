@@ -4,7 +4,11 @@ import { db } from "../../db/connection.ts";
 import { registerBo } from "../../db/schema/register_bo.ts";
 import { boAuditLog } from "../../db/schema/bo_audit_log.ts";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
-import { sendBoConfirmationEmail } from "../../services/email.ts";
+import {
+  sendBoConfirmationEmail,
+  sendBoDeletionEmail,
+  sendBoUpdateEmail,
+} from "../../services/email.ts";
 import { generatePdf } from "../../services/pdf.ts";
 import { isValidPoliceIdentifier } from "../../services/police.ts";
 
@@ -24,7 +28,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
             .union([
               z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
               z.string().datetime(),
-              z.literal("")
+              z.literal(""),
             ])
             .optional(),
           gender: z.string().optional(),
@@ -63,35 +67,38 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         // Normalizar data de nascimento para YYYY-MM-DD (se vier como ISO)
         const normalizedDateOfBirth =
           typeof date_of_birth === "string"
-            ? (date_of_birth.includes("T")
-                ? date_of_birth.slice(0, 10)
-                : date_of_birth)
+            ? date_of_birth.includes("T")
+              ? date_of_birth.slice(0, 10)
+              : date_of_birth
             : undefined;
         const sanitizedEmail = email === "" ? null : email;
 
         // Inserir o B.O. no banco de dados
-        const [result] = await db.insert(registerBo).values({
-          date_and_time_of_event: new Date(date_and_time_of_event),
-          place_of_the_fact,
-          type_of_occurrence,
-          full_name,
-          cpf_or_rg,
-          date_of_birth:
-            normalizedDateOfBirth === undefined
-              ? undefined
-              : normalizedDateOfBirth === ""
-              ? null
-              : normalizedDateOfBirth,
-          gender,
-          nationality,
-          marital_status,
-          profession,
-          full_address,
-          phone_or_cell_phone,
-          email: sanitizedEmail,
-          relationship_with_the_fact,
-          transcription,
-        }).returning({ id: registerBo.id });
+        const [result] = await db
+          .insert(registerBo)
+          .values({
+            date_and_time_of_event: new Date(date_and_time_of_event),
+            place_of_the_fact,
+            type_of_occurrence,
+            full_name,
+            cpf_or_rg,
+            date_of_birth:
+              normalizedDateOfBirth === undefined
+                ? undefined
+                : normalizedDateOfBirth === ""
+                  ? null
+                  : normalizedDateOfBirth,
+            gender,
+            nationality,
+            marital_status,
+            profession,
+            full_address,
+            phone_or_cell_phone,
+            email: sanitizedEmail,
+            relationship_with_the_fact,
+            transcription,
+          })
+          .returning({ id: registerBo.id });
 
         const boId = result.id;
 
@@ -130,9 +137,12 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               boId,
               pdfBuffer
             );
-            
+
             if (!emailResult.success) {
-              app.log.error(`Erro ao enviar e-mail para ${email}:`, emailResult.error);
+              app.log.error(
+                `Erro ao enviar e-mail para ${email}:`,
+                emailResult.error
+              );
             } else {
               app.log.info(`E-mail enviado com sucesso para ${email}`);
             }
@@ -153,82 +163,87 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   );
 
   app.get(
-  '/register-bo',
-  {
-    schema: {
-      querystring: z.object({
-        page: z.coerce.number().optional().default(1),
-        searchTerm: z.string().optional(),
-        typeFilter: z.string().optional(),
-      }),
+    "/register-bo",
+    {
+      schema: {
+        querystring: z.object({
+          page: z.coerce.number().optional().default(1),
+          searchTerm: z.string().optional(),
+          typeFilter: z.string().optional(),
+        }),
+      },
     },
-  },
-  async (request, reply) => {
-    const { page, searchTerm, typeFilter } = request.query
-    const limit = 10
-    const offset = (page - 1) * limit
+    async (request, reply) => {
+      const { page, searchTerm, typeFilter } = request.query;
+      const limit = 10;
+      const offset = (page - 1) * limit;
 
-    try {
-      const whereConditions = []
+      try {
+        const whereConditions = [];
 
-      // 🔍 Filtro por nome com acento + case insensitive
-      if (searchTerm) {
-        const searchTermPattern = `%${searchTerm}%`
-        whereConditions.push(
-          or(
-            sql`unaccent(${registerBo.id}::text) ILIKE unaccent(${searchTermPattern})`,
-            sql`unaccent(${registerBo.full_name}) ILIKE unaccent(${searchTermPattern})`,
-            sql`unaccent(${registerBo.place_of_the_fact}) ILIKE unaccent(${searchTermPattern})`,
-            sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`,
-          ),
-        )
+        // 🔍 Filtro por nome com acento + case insensitive
+        if (searchTerm) {
+          const searchTermPattern = `%${searchTerm}%`;
+          whereConditions.push(
+            or(
+              sql`unaccent(${registerBo.id}::text) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.full_name}) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.place_of_the_fact}) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`
+            )
+          );
+        }
+
+        // 🎯 Filtro por tipo (se não for "all")
+        if (typeFilter && typeFilter !== "all") {
+          whereConditions.push(eq(registerBo.type_of_occurrence, typeFilter));
+        }
+
+        const finalWhereCondition =
+          whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+        // 📊 Busca total + dados paginados
+        const baseCountQuery = db
+          .select({ count: sql`count(*)` })
+          .from(registerBo);
+        const baseDataQuery = db.select().from(registerBo);
+
+        const countQuery = finalWhereCondition
+          ? baseCountQuery.where(finalWhereCondition)
+          : baseCountQuery;
+
+        const dataQuery = finalWhereCondition
+          ? baseDataQuery.where(finalWhereCondition)
+          : baseDataQuery;
+
+        const [total, data] = await Promise.all([
+          countQuery,
+          dataQuery
+            .orderBy(desc(registerBo.createdAt))
+            .limit(limit)
+            .offset(offset),
+        ]);
+
+        const totalCount = Number(total[0].count);
+
+        return reply.status(200).send({
+          data,
+          total: totalCount,
+          page,
+          totalPages: Math.ceil(totalCount / limit),
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          app.log.error("Erro ao listar B.O.s: " + error.stack);
+        } else {
+          app.log.error("Erro ao listar B.O.s:", error);
+        }
+        return reply
+          .status(500)
+          .send({ error: "Erro interno ao listar B.O.s" });
       }
-
-      // 🎯 Filtro por tipo (se não for "all")
-      if (typeFilter && typeFilter !== 'all') {
-        whereConditions.push(eq(registerBo.type_of_occurrence, typeFilter))
-      }
-
-      const finalWhereCondition =
-        whereConditions.length > 0 ? and(...whereConditions) : undefined
-
-      // 📊 Busca total + dados paginados
-      const baseCountQuery = db.select({ count: sql`count(*)` }).from(registerBo)
-      const baseDataQuery = db.select().from(registerBo)
-
-      const countQuery = finalWhereCondition
-        ? baseCountQuery.where(finalWhereCondition)
-        : baseCountQuery
-
-      const dataQuery = finalWhereCondition
-        ? baseDataQuery.where(finalWhereCondition)
-        : baseDataQuery
-
-      const [total, data] = await Promise.all([
-        countQuery,
-        dataQuery.orderBy(desc(registerBo.createdAt)).limit(limit).offset(offset),
-      ])
-
-      const totalCount = Number(total[0].count)
-
-      return reply.status(200).send({
-        data,
-        total: totalCount,
-        page,
-        totalPages: Math.ceil(totalCount / limit),
-      })
-    } catch (error) {
-      if (error instanceof Error) {
-        app.log.error('Erro ao listar B.O.s: ' + error.stack)
-      } else {
-        app.log.error('Erro ao listar B.O.s:', error)
-      }
-      return reply
-        .status(500)
-        .send({ error: 'Erro interno ao listar B.O.s' })
     }
-  },
-)
+  );
 
   app.get(
     "/register-bo/:id",
@@ -281,7 +296,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
             .union([
               z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
               z.string().datetime(),
-              z.literal("")
+              z.literal(""),
             ])
             .optional(),
           gender: z.string().optional(),
@@ -301,12 +316,15 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
     },
     async (request, reply) => {
       const { id } = request.params;
-      const { date_and_time_of_event, police_identifier, ...fieldsToUpdate } = request.body;
+      const { date_and_time_of_event, police_identifier, ...fieldsToUpdate } =
+        request.body;
 
       try {
         // Validar policial
         if (!isValidPoliceIdentifier(police_identifier)) {
-          return reply.status(403).send({ error: "Policial não autorizado ou identificador inválido" });
+          return reply.status(403).send({
+            error: "Policial não autorizado ou identificador inválido",
+          });
         }
 
         // Buscar estado atual para auditoria/diff
@@ -321,43 +339,43 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
 
         // Chaves conforme schema do banco (nullable vs notNull)
         const nullableKeys = new Set([
-            "cpf_or_rg",
-            "date_of_birth",
-            "gender",
-            "nationality",
-            "marital_status",
-            "profession",
-            "full_address",
-            "phone_or_cell_phone",
-            "email",
-            "transcription",
+          "cpf_or_rg",
+          "date_of_birth",
+          "gender",
+          "nationality",
+          "marital_status",
+          "profession",
+          "full_address",
+          "phone_or_cell_phone",
+          "email",
+          "transcription",
         ]);
         const nonNullableKeys = new Set([
-            "place_of_the_fact",
-            "type_of_occurrence",
-            "full_name",
-            "relationship_with_the_fact",
+          "place_of_the_fact",
+          "type_of_occurrence",
+          "full_name",
+          "relationship_with_the_fact",
         ]);
-    
+
         // Converte "" -> null apenas para campos nullable; ignora "" nos not-null
         const sanitizedFields = Object.fromEntries(
-            Object.entries(fieldsToUpdate)
-                .filter(([key, value]) => {
-                    if (value === "") {
-                        return nullableKeys.has(key);
-                    }
-                    return value !== undefined;
-                })
-                .map(([key, value]) => [key, value === "" ? null : value]),
+          Object.entries(fieldsToUpdate)
+            .filter(([key, value]) => {
+              if (value === "") {
+                return nullableKeys.has(key);
+              }
+              return value !== undefined;
+            })
+            .map(([key, value]) => [key, value === "" ? null : value])
         );
-    
+
         // Normalizar data de nascimento (ISO -> YYYY-MM-DD)
         const normalizedDOB =
-            typeof fieldsToUpdate.date_of_birth === "string"
-                ? fieldsToUpdate.date_of_birth.includes("T")
-                    ? fieldsToUpdate.date_of_birth.slice(0, 10)
-                    : fieldsToUpdate.date_of_birth
-                : fieldsToUpdate.date_of_birth;
+          typeof fieldsToUpdate.date_of_birth === "string"
+            ? fieldsToUpdate.date_of_birth.includes("T")
+              ? fieldsToUpdate.date_of_birth.slice(0, 10)
+              : fieldsToUpdate.date_of_birth
+            : fieldsToUpdate.date_of_birth;
 
         // Monta conjunto de campos a atualizar
         const setFields: Record<string, any> = {
@@ -369,7 +387,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           ...(normalizedDOB !== undefined && {
             date_of_birth: normalizedDOB === "" ? null : normalizedDOB,
           }),
-        }
+        };
 
         // Se não há nenhum campo a atualizar, registra auditoria vazia e retorna estado atual
         if (Object.keys(setFields).length === 0) {
@@ -377,16 +395,16 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
             boId: id,
             action: "update",
             policeIdentifier: police_identifier,
-            details: { changedKeys: [], diff: {}, ip: (request.ip as any) },
+            details: { changedKeys: [], diff: {}, ip: request.ip as any },
           });
           return reply.status(200).send(before);
         }
-    
+
         const updatedBo = await db
-            .update(registerBo)
-            .set(setFields)
-            .where(eq(registerBo.id, id))
-            .returning();
+          .update(registerBo)
+          .set(setFields)
+          .where(eq(registerBo.id, id))
+          .returning();
 
         if (!updatedBo.length) {
           return reply.status(404).send({ error: "B.O. não encontrado" });
@@ -397,7 +415,10 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         // Calcular diff
         const changedKeys = [
           ...Object.keys(sanitizedFields),
-          ...(typeof date_and_time_of_event === "string" && date_and_time_of_event !== "" ? ["date_and_time_of_event"] : []),
+          ...(typeof date_and_time_of_event === "string" &&
+          date_and_time_of_event !== ""
+            ? ["date_and_time_of_event"]
+            : []),
           ...(normalizedDOB !== undefined ? ["date_of_birth"] : []),
         ];
         const diff: Record<string, { from: any; to: any }> = Object.fromEntries(
@@ -407,15 +428,31 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               from: (before as any)[k] ?? null,
               to: (after as any)[k] ?? null,
             },
-          ]),
+          ])
         );
 
         await db.insert(boAuditLog).values({
           boId: id,
           action: "update",
           policeIdentifier: police_identifier,
-          details: { changedKeys, diff, ip: (request.ip as any) },
+          details: { changedKeys, diff, ip: request.ip as any },
         });
+
+        // Enviar e-mail de notificação se houver alterações
+        if (changedKeys.length > 0 && before.email) {
+          try {
+            await sendBoUpdateEmail(
+              before.email,
+              before.full_name,
+              id,
+              diff,
+              police_identifier
+            );
+          } catch (emailError) {
+            app.log.error("Erro ao enviar e-mail de atualização:", emailError);
+            // Não bloqueia a resposta se o e-mail falhar, mas loga o erro
+          }
+        }
 
         return reply.status(200).send(after);
       } catch (error) {
@@ -436,16 +473,27 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         }),
         body: z.object({
           police_identifier: z.string().min(1),
+          reason: z
+            .string()
+            .min(5, "Motivo deve ter pelo menos 5 caracteres")
+            .optional(),
         }),
       },
     },
     async (request, reply) => {
       const { id } = request.params;
-      const { police_identifier } = request.body as { police_identifier: string };
+      const { police_identifier, reason } = request.body as {
+        police_identifier: string;
+        reason?: string;
+      };
+
+      const reasonText = reason || "Motivo não informado";
 
       try {
         if (!isValidPoliceIdentifier(police_identifier)) {
-          return reply.status(403).send({ error: "Policial não autorizado ou identificador inválido" });
+          return reply.status(403).send({
+            error: "Policial não autorizado ou identificador inválido",
+          });
         }
 
         const beforeRows = await db
@@ -478,9 +526,24 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               type_of_occurrence: before.type_of_occurrence,
               created_at: (before as any).createdAt,
             },
-            ip: (request.ip as any),
+            reason: reasonText,
+            ip: request.ip as any,
           },
         });
+
+        if (before.email) {
+          try {
+            await sendBoDeletionEmail(
+              before.email,
+              before.full_name,
+              id,
+              reasonText,
+              police_identifier
+            );
+          } catch (emailError) {
+            app.log.error("Erro ao enviar e-mail de exclusão:", emailError);
+          }
+        }
 
         return reply.status(204).send();
       } catch (error) {
