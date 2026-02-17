@@ -29,7 +29,18 @@ const commonStyles = `
 `;
 
 // Template HTML básico para o e-mail
-const getEmailTemplate = (fullName: string, boId: string) => {
+const getEmailTemplate = (
+  fullName: string,
+  boId: string,
+  telegramDeepLink?: string,
+) => {
+  const telegramSection = telegramDeepLink
+    ? `
+          <p>Se desejar receber notificações sobre este e outros B.O.s pelo Telegram, acesse o link abaixo para ativar:</p>
+          <p><a href="${telegramDeepLink}" target="_blank" rel="noopener noreferrer">${telegramDeepLink}</a></p>
+        `
+    : "";
+
   return `
     <!DOCTYPE html>
     <html>
@@ -50,6 +61,7 @@ const getEmailTemplate = (fullName: string, boId: string) => {
           <p>Em anexo, você encontrará o PDF com todos os detalhes do seu registro.</p>
           <p>Este documento serve como comprovante oficial do seu registro.</p>
           <p>Caso tenha alguma dúvida, entre em contato com a delegacia mais próxima.</p>
+          ${telegramSection}
         </div>
         <div class="footer">
           <p>Este é um e-mail automático. Por favor, não responda.</p>
@@ -60,21 +72,39 @@ const getEmailTemplate = (fullName: string, boId: string) => {
   `;
 };
 
+const fieldLabelMap: Record<string, string> = {
+  date_and_time_of_event: "Data e hora do fato",
+  place_of_the_fact: "Local do fato",
+  type_of_occurrence: "Tipo de ocorrência",
+  full_name: "Nome completo",
+  cpf_or_rg: "CPF ou RG",
+  date_of_birth: "Data de nascimento",
+  gender: "Gênero",
+  nationality: "Nacionalidade",
+  marital_status: "Estado civil",
+  profession: "Profissão",
+  full_address: "Endereço completo",
+  phone_or_cell_phone: "Telefone ou celular",
+  email: "E-mail",
+  relationship_with_the_fact: "Relação com o fato",
+  transcription: "Relato do ocorrido",
+};
+
 const getUpdateEmailTemplate = (
   fullName: string,
   boId: string,
   changes: Record<string, { from: any; to: any }>,
-  policeIdentifier: string
+  policeIdentifier: string,
 ) => {
   const rows = Object.entries(changes)
     .map(
       ([key, value]) => `
     <tr>
-      <td>${key}</td>
+      <td>${fieldLabelMap[key] ?? key}</td>
       <td>${value.from}</td>
       <td>${value.to}</td>
     </tr>
-  `
+  `,
     )
     .join("");
 
@@ -125,7 +155,7 @@ const getDeletionEmailTemplate = (
   fullName: string,
   boId: string,
   reason: string,
-  policeIdentifier: string
+  policeIdentifier: string,
 ) => {
   return `
     <!DOCTYPE html>
@@ -159,7 +189,7 @@ const getDeletionEmailTemplate = (
 
 async function sendEmailWithRetry(
   params: any,
-  retries = 3
+  retries = 3,
 ): Promise<{ data: any; error: any }> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -188,14 +218,15 @@ export async function sendBoConfirmationEmail(
   recipientEmail: string,
   fullName: string,
   boId: string,
-  pdfBuffer: Buffer
+  pdfBuffer: Buffer,
+  telegramDeepLink?: string,
 ) {
   try {
     const { data, error } = await sendEmailWithRetry({
       from: env.EMAIL_FROM || "boletim@seusistema.com",
       to: recipientEmail,
       subject: "Confirmação de Registro de Boletim de Ocorrência",
-      html: getEmailTemplate(fullName, boId),
+      html: getEmailTemplate(fullName, boId, telegramDeepLink),
       attachments: [
         {
           filename: `BO_${boId}.pdf`,
@@ -248,7 +279,7 @@ export async function sendBoUpdateEmail(
   fullName: string,
   boId: string,
   changes: Record<string, { from: any; to: any }>,
-  policeIdentifier: string
+  policeIdentifier: string,
 ) {
   try {
     const { data, error } = await sendEmailWithRetry({
@@ -298,7 +329,7 @@ export async function sendBoDeletionEmail(
   fullName: string,
   boId: string,
   reason: string,
-  policeIdentifier: string
+  policeIdentifier: string,
 ) {
   try {
     const { data, error } = await sendEmailWithRetry({
