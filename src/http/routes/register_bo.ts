@@ -11,6 +11,28 @@ import {
 } from "../../services/email.ts";
 import { generatePdf } from "../../services/pdf.ts";
 import { isValidPoliceIdentifier } from "../../services/police.ts";
+import {
+  getTelegramDeepLinkForPhone,
+  sendTelegramMessageToPhone,
+} from "../../services/telegram.ts";
+
+const updateFieldLabels: Record<string, string> = {
+  date_and_time_of_event: "Data e hora do fato",
+  place_of_the_fact: "Local do fato",
+  type_of_occurrence: "Tipo de ocorrência",
+  full_name: "Nome completo",
+  cpf_or_rg: "CPF ou RG",
+  date_of_birth: "Data de nascimento",
+  gender: "Gênero",
+  nationality: "Nacionalidade",
+  marital_status: "Estado civil",
+  profession: "Profissão",
+  full_address: "Endereço completo",
+  phone_or_cell_phone: "Telefone ou celular",
+  email: "E-mail",
+  relationship_with_the_fact: "Relação com o fato",
+  transcription: "Relato do ocorrido",
+};
 
 export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   app.post(
@@ -128,20 +150,23 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
 
         const pdfBuffer = await generatePdf(pdfData);
 
-        // Enviar e-mail com o PDF anexado (se o e-mail foi fornecido)
+        const telegramDeepLink =
+          getTelegramDeepLinkForPhone(phone_or_cell_phone);
+
         if (email) {
           try {
             const emailResult = await sendBoConfirmationEmail(
               email,
               full_name,
               boId,
-              pdfBuffer
+              pdfBuffer,
+              telegramDeepLink,
             );
 
             if (!emailResult.success) {
               app.log.error(
                 `Erro ao enviar e-mail para ${email}:`,
-                emailResult.error
+                emailResult.error,
               );
             } else {
               app.log.info(`E-mail enviado com sucesso para ${email}`);
@@ -159,7 +184,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           .status(500)
           .send({ error: "Erro interno ao registrar B.O." });
       }
-    }
+    },
   );
 
   app.get(
@@ -189,8 +214,8 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               sql`unaccent(${registerBo.id}::text) ILIKE unaccent(${searchTermPattern})`,
               sql`unaccent(${registerBo.full_name}) ILIKE unaccent(${searchTermPattern})`,
               sql`unaccent(${registerBo.place_of_the_fact}) ILIKE unaccent(${searchTermPattern})`,
-              sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`
-            )
+              sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`,
+            ),
           );
         }
 
@@ -242,7 +267,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           .status(500)
           .send({ error: "Erro interno ao listar B.O.s" });
       }
-    }
+    },
   );
 
   app.get(
@@ -272,7 +297,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
         app.log.error("Erro ao buscar B.O.:", error);
         return reply.status(500).send({ error: "Erro interno ao buscar B.O." });
       }
-    }
+    },
   );
 
   app.put(
@@ -366,7 +391,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               }
               return value !== undefined;
             })
-            .map(([key, value]) => [key, value === "" ? null : value])
+            .map(([key, value]) => [key, value === "" ? null : value]),
         );
 
         // Normalizar data de nascimento (ISO -> YYYY-MM-DD)
@@ -412,7 +437,6 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
 
         const after = updatedBo[0];
 
-        // Calcular diff
         const changedKeys = [
           ...Object.keys(sanitizedFields),
           ...(typeof date_and_time_of_event === "string" &&
@@ -428,7 +452,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               from: (before as any)[k] ?? null,
               to: (after as any)[k] ?? null,
             },
-          ])
+          ]),
         );
 
         await db.insert(boAuditLog).values({
@@ -438,7 +462,6 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           details: { changedKeys, diff, ip: request.ip as any },
         });
 
-        // Enviar e-mail de notificação se houver alterações
         if (changedKeys.length > 0 && before.email) {
           try {
             await sendBoUpdateEmail(
@@ -446,11 +469,29 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               before.full_name,
               id,
               diff,
-              police_identifier
+              police_identifier,
             );
           } catch (emailError) {
             app.log.error("Erro ao enviar e-mail de atualização:", emailError);
-            // Não bloqueia a resposta se o e-mail falhar, mas loga o erro
+          }
+        }
+
+        if (before.phone_or_cell_phone) {
+          try {
+            const changedLabels = changedKeys.map(
+              (key) => updateFieldLabels[key] ?? key,
+            );
+            await sendTelegramMessageToPhone(
+              before.phone_or_cell_phone,
+              `Atualização do Boletim de Ocorrência ${id}. Alterações registradas: ${changedLabels.join(
+                ", ",
+              )}. Verifique seu e‑mail para detalhes e orientações.`,
+            );
+          } catch (telegramError) {
+            app.log.error(
+              "Erro ao enviar notificação de atualização no Telegram:",
+              telegramError,
+            );
           }
         }
 
@@ -461,7 +502,7 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           .status(500)
           .send({ error: "Erro interno ao atualizar B.O." });
       }
-    }
+    },
   );
 
   app.delete(
@@ -538,10 +579,24 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
               before.full_name,
               id,
               reasonText,
-              police_identifier
+              police_identifier,
             );
           } catch (emailError) {
             app.log.error("Erro ao enviar e-mail de exclusão:", emailError);
+          }
+        }
+
+        if (before.phone_or_cell_phone) {
+          try {
+            await sendTelegramMessageToPhone(
+              before.phone_or_cell_phone,
+              `Exclusão do Boletim de Ocorrência ${id}. Motivo: ${reasonText}. Verifique seu e‑mail para detalhes e próximos passos.`,
+            );
+          } catch (telegramError) {
+            app.log.error(
+              "Erro ao enviar notificação de exclusão no Telegram:",
+              telegramError,
+            );
           }
         }
 
@@ -552,6 +607,6 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
           .status(500)
           .send({ error: "Erro interno ao deletar B.O." });
       }
-    }
+    },
   );
 };

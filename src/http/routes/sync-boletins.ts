@@ -5,6 +5,7 @@ import { registerBo } from '../../db/schema/register_bo.ts'
 import { eq } from 'drizzle-orm'
 import { generatePdf } from '../../services/pdf.ts'
 import { sendBoConfirmationEmail } from '../../services/email.ts'
+import { getTelegramDeepLinkForPhone } from '../../services/telegram.ts'
 
 // Endpoint para sincronização de B.Os offline
 export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
@@ -138,7 +139,6 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
           const serverId = created.id
           synced.push({ localId, serverId })
 
-          // Opcional: envia e-mail com PDF anexado, seguindo comportamento do endpoint existente
           if (sanitizedEmail) {
             const pdfData = {
               id: serverId,
@@ -162,11 +162,15 @@ export const syncBoletinsRoute: FastifyPluginCallbackZod = (app) => {
 
             try {
               const pdfBuffer = await generatePdf(pdfData)
+              const telegramDeepLink = getTelegramDeepLinkForPhone(
+                phone_or_cell_phone,
+              )
               const emailResult = await sendBoConfirmationEmail(
                 sanitizedEmail,
                 full_name,
                 serverId,
                 pdfBuffer,
+                telegramDeepLink,
               )
 
               if (!emailResult.success) {
