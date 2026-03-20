@@ -271,6 +271,78 @@ export const registerBoRoute: FastifyPluginCallbackZod = (app) => {
   );
 
   app.get(
+    "/register-bo/all",
+    {
+      schema: {
+        querystring: z.object({
+          searchTerm: z.string().optional(),
+          typeFilter: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { searchTerm, typeFilter } = request.query;
+
+      try {
+        const whereConditions = [];
+
+        if (searchTerm) {
+          const searchTermPattern = `%${searchTerm}%`;
+          whereConditions.push(
+            or(
+              sql`unaccent(${registerBo.id}::text) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.full_name}) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.place_of_the_fact}) ILIKE unaccent(${searchTermPattern})`,
+              sql`unaccent(${registerBo.type_of_occurrence}) ILIKE unaccent(${searchTermPattern})`,
+            ),
+          );
+        }
+
+        if (typeFilter && typeFilter !== "all") {
+          whereConditions.push(eq(registerBo.type_of_occurrence, typeFilter));
+        }
+
+        const finalWhereCondition =
+          whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+        const baseCountQuery = db
+          .select({ count: sql`count(*)` })
+          .from(registerBo);
+        const baseDataQuery = db.select().from(registerBo);
+
+        const countQuery = finalWhereCondition
+          ? baseCountQuery.where(finalWhereCondition)
+          : baseCountQuery;
+
+        const dataQuery = finalWhereCondition
+          ? baseDataQuery.where(finalWhereCondition)
+          : baseDataQuery;
+
+        const [total, data] = await Promise.all([
+          countQuery,
+          dataQuery.orderBy(desc(registerBo.createdAt)),
+        ]);
+
+        const totalCount = Number(total[0].count);
+
+        return reply.status(200).send({
+          data,
+          total: totalCount,
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          app.log.error("Erro ao listar todos os B.O.s: " + error.stack);
+        } else {
+          app.log.error("Erro ao listar todos os B.O.s:", error);
+        }
+        return reply
+          .status(500)
+          .send({ error: "Erro interno ao listar todos os B.O.s" });
+      }
+    },
+  );
+
+  app.get(
     "/register-bo/:id",
     {
       schema: {
