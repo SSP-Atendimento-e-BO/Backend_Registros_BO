@@ -37,7 +37,7 @@ app.register(telegramRoute);
 const start = async () => {
   try {
     startTelegramPolling();
-    await app.listen({ port: PORT });
+    await app.listen({ port: PORT, host: "0.0.0.0" });
     app.log.info(`🚀 Servidor rodando em http://localhost:${PORT}`);
   } catch (err) {
     app.log.error(err);
